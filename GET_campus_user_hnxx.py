@@ -7,29 +7,41 @@ from dotenv import load_dotenv
 
 load_dotenv() # 加载 .env 文件中的变量
 
-USERNAME = os.getenv("USERNAME")
-PASS = os.getenv("PASSWORD")
 def get_md5(password):
     """模拟前端 md5.js 的加密行为"""
     return hashlib.md5(password.encode('utf-8')).hexdigest()
 
-# 配置信息
-LOGIN_URL = "https://sso.hnuit.edu.cn/cas/login?service=https%3A%2F%2Feportal.hnuit.edu.cn%2Fehall%2Flogin"
-#USERNAME = "your_username"
-#PASS = "your_password"
-# 注意：如果日志里的密码是加密后的，这里也要填加密后的字符串
-PASSWORD = get_md5(PASS) 
+def GET_campus_user_hnxx(username=None, password=None):
+    """
+    获取 campus_user_hnxx cookie 值
+    
+    Args:
+        username (str, optional): 用户名，如果不提供则从环境变量 USERNAME 中读取
+        password (str, optional): 密码，如果不提供则从环境变量 PASSWORD 中读取
+        
+    Returns:
+        str: 解码后的 campus_user_hnxx 值，如果失败则返回 None
+    """
+    # 使用传入的参数或从环境变量读取
+    USERNAME = username or os.getenv("USERNAME")
+    PASS = password or os.getenv("PASSWORD")
+    
+    if not USERNAME or not PASS:
+        print("[-] 错误：未提供用户名和密码，也未在环境变量中找到")
+        return None
+    
+    # 配置信息
+    LOGIN_URL = "https://sso.hnuit.edu.cn/cas/login?service=https%3A%2F%2Feportal.hnuit.edu.cn%2Fehall%2Flogin"
+    PASSWORD = get_md5(PASS) 
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
-})
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+    })
 
-def get_campus_cookie():
     try:
         # 1. 访问登录页获取动态的 execution 参数
-        print(f"[*] 正在请求登录页面: {LOGIN_URL}")
         res_init = session.get(LOGIN_URL, timeout=10)
         
         # CAS 通常在 HTML 里有一个隐藏域 <input name="execution" value="xxx" />
@@ -39,7 +51,6 @@ def get_campus_cookie():
             return None
         
         execution_val = execution_match.group(1)
-        print(f"[+] 提取到 execution: {execution_val[:20]}...")
 
         # 2. 模拟 POST 登录
         payload = {
@@ -52,13 +63,8 @@ def get_campus_cookie():
             "captcha": ""
         }
         
-        print("[*] 正在提交登录凭据...")
         # allow_redirects=True 让 requests 自动处理后续的 302 跳转
-        # 这样它会自动走完：Ticket验证 -> 设置 Cookie -> 进入主页
         res_login = session.post(LOGIN_URL, data=payload, allow_redirects=True, timeout=10)
-        
-        print(f"[*] 最终响应状态码: {res_login.status_code}")
-        print(f"[*] 最终 URL: {res_login.url}")
 
         # 3. 提取目标字段
         # 尝试从所有已访问域名中查找 cookie
@@ -72,12 +78,10 @@ def get_campus_cookie():
                     break
 
         if campus_user:
-            print(f"\n[!] 成功获取 campus_user_hnxx!")
-            return campus_user
+            # 返回解码后的值
+            return unquote(campus_user)
         else:
-            print("\n[-] 未能提取到 campus_user_hnxx。可能原因：密码错误、需要验证码或 execution 过期。")
-            # 打印当前所有 Cookie 供排查
-            print(f"[*] 当前 Session 中的 Cookies: {session.cookies.get_dict()}")
+            print("[-] 未能提取到 campus_user_hnxx。可能原因：密码错误、需要验证码或 execution 过期。")
             return None
 
     except Exception as e:
@@ -85,12 +89,8 @@ def get_campus_cookie():
         return None
 
 if __name__ == "__main__":
-    cookie_val = get_campus_cookie()
+    cookie_val = GET_campus_user_hnxx()
     if cookie_val:
-        # 只有不为 None 时才进行解码
-        print("-" * 30)
-        print("解密后的 Cookie 值:")
-        print(unquote(cookie_val))
-        print("-" * 30)
+        print(cookie_val)
     else:
         print("\n[提示] 脚本未能在响应中找到目标字段，请检查上方打印的调试信息。")
